@@ -367,6 +367,26 @@ async def check_sub(user_id: int) -> bool:
     except Exception:
         return True
 
+async def require_sub(chat_id, user_id: int) -> bool:
+    """Возвращает True если подписан, иначе отправляет блокирующее сообщение и возвращает False."""
+    if await check_sub(user_id):
+        return True
+    kb = ikb(
+        [ibtn("📢 Подписаться на канал", url=CHANNEL_LINK,
+              style="primary", icon_id=I.CHANNEL)],
+        [ibtn("✅ Я подписался", callback="check_sub",
+              style="success", icon_id=I.CHECK)],
+    )
+    await send_raw(
+        chat_id,
+        f"{E.LOCK} <b>Подписка обязательна!</b>\n\n"
+        f"Чтобы пользоваться ботом, подпишись на канал:\n"
+        f"{E.CHANNEL} {CHANNEL_LINK}\n\n"
+        f"После подписки нажми кнопку ниже 👇",
+        reply_markup=kb,
+    )
+    return False
+
 # ══════════════════════════════════════════════
 #  РЕФЕРАЛЬНАЯ СИСТЕМА
 # ══════════════════════════════════════════════
@@ -419,9 +439,9 @@ async def set_commands():
     cmds = [
         BotCommand(command="start",      description="Запустить бота"),
         BotCommand(command="dick",       description="Изменить размер писюна"),
+        BotCommand(command="nick",       description="Сменить никнейм (/nick НовыйНик)"),
         BotCommand(command="daily",      description="Ежедневный бонус"),
-        BotCommand(command="top_dick",   description="Топ 10 чата"),
-        BotCommand(command="global_top", description="Глобальный топ 10"),
+        BotCommand(command="top",        description="Рейтинги — чат / глобальный / топ чатов"),
         BotCommand(command="stats",      description="Моя статистика"),
         BotCommand(command="stats_img",  description="Статистика картинкой"),
         BotCommand(command="ref",        description="Реферальная система"),
@@ -445,106 +465,166 @@ async def set_commands():
 def generate_stats_image(
     name: str, size: int, rank, last_used: str, extra: int, streak: int
 ) -> BytesIO:
-    W, H = 740, 480
-    img  = Image.new("RGB", (W, H), (6, 6, 18))
+    W, H = 800, 520
+    MARGIN = 28
+    PURPLE_DARK  = (14,  6,  42)
+    PURPLE_MID   = (28, 12,  80)
+    PURPLE_CARD  = (20,  8,  58)
+    PURPLE_LIGHT = (160, 80, 255)
+    ACCENT_GOLD  = (255, 200,  60)
+    ACCENT_CYAN  = ( 80, 210, 255)
+    ACCENT_GREEN = ( 80, 255, 160)
+    ACCENT_ORNG  = (255, 145,  55)
+    TEXT_DIM     = (140, 120, 200)
+    TEXT_WHITE   = (255, 255, 255)
+    BG_TOP       = ( 8,   4,  28)
+    BG_BOT       = (18,  10,  50)
+
+    img  = Image.new("RGB", (W, H), BG_TOP)
     draw = ImageDraw.Draw(img)
 
-    rng = random.Random(77)
-    for _ in range(200):
-        sx, sy = rng.randint(0, W), rng.randint(0, H)
-        br = rng.randint(30, 180)
-        sz = rng.randint(0, 1)
-        draw.ellipse([sx-sz, sy-sz, sx+sz, sy+sz],
-                     fill=(br, br, min(br+70, 255)))
-
+    # — фон: вертикальный градиент —
     for y in range(H):
         t = y / H
-        draw.line(
-            [(22, 20 + y*(H-40)//H), (W-22, 20 + y*(H-40)//H)],
-            fill=(int(14+10*t), int(6+6*t), int(38+20*t)),
-        )
+        r = int(BG_TOP[0] + (BG_BOT[0]-BG_TOP[0])*t)
+        g = int(BG_TOP[1] + (BG_BOT[1]-BG_TOP[1])*t)
+        b = int(BG_TOP[2] + (BG_BOT[2]-BG_TOP[2])*t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
 
-    for i, col in enumerate([(130,60,255),(90,40,190),(55,25,130)]):
-        draw.rounded_rectangle(
-            [22-i, 20-i, W-22+i, H-20+i], radius=28, outline=col, width=1
-        )
+    # — звёзды —
+    rng = random.Random(42)
+    for _ in range(180):
+        sx = rng.randint(0, W)
+        sy = rng.randint(0, H)
+        br = rng.randint(40, 200)
+        sz = rng.choice([0, 0, 0, 1])
+        draw.ellipse([sx-sz, sy-sz, sx+sz, sy+sz],
+                     fill=(br, br, min(br+60, 255)))
 
-    try:
-        fb = ImageFont.truetype("arialbd.ttf", 26)
-        fn = ImageFont.truetype("arialbd.ttf", 32)
-        fv = ImageFont.truetype("arialbd.ttf", 22)
-        fl = ImageFont.truetype("arial.ttf",   16)
-        ft = ImageFont.truetype("arial.ttf",   13)
-    except Exception:
-        fb = fn = fv = fl = ft = ImageFont.load_default()
+    # — внешняя рамка —
+    draw.rounded_rectangle([MARGIN, MARGIN, W-MARGIN, H-MARGIN],
+                            radius=24, outline=PURPLE_LIGHT, width=2)
 
-    draw.rounded_rectangle([22, 20, W-22, 106], radius=28, fill=(20,8,58))
-    draw.rounded_rectangle([22, 80, W-22, 106], radius=0,  fill=(20,8,58))
-    draw.ellipse([32, 22, 116, 86],       fill=(44,16,108))
-    draw.ellipse([W-116, 22, W-32, 86],  fill=(44,16,108))
-    draw.text((W//2, 62),
-              "✦  СТАТИСТИКА  |  PipisaMod  ✦",
-              font=fb, fill=(215,175,255), anchor="mm")
-
-    draw.rounded_rectangle([36, 114, W-36, 166], radius=16, fill=(16,6,46))
-    draw.rounded_rectangle([36, 114, 41,   166], radius=4,  fill=(160,80,255))
-    draw.text((W//2, 140), f"👤  {name}",
-              font=fn, fill=(255,255,255), anchor="mm")
-
-    for x in range(46, W-46):
-        t = (x-46)/(W-92)
-        draw.point((x, 174), fill=(int(55+165*t), 28, int(225-95*t)))
-
-    stats = [
-        ("📏", "Размер писюна",  f"{size} см",  (190,100,255)),
-        ("🏆", "Место в чате",   f"#{rank}",     (255,205,55)),
-        ("📅", "Последняя игра", last_used,       (100,210,255)),
-        ("🎟", "Доп. попытки",   f"{extra} шт.", (100,255,160)),
+    # — загрузка шрифтов —
+    bold_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
     ]
-    cw  = (W - 52 - 16) // 2
-    rh  = 70
-    sy0 = 182
+    reg_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    def lf(paths, sz):
+        for p in paths:
+            try: return ImageFont.truetype(p, sz)
+            except Exception: pass
+        return ImageFont.load_default()
 
-    for i, (icon, label, value, accent) in enumerate(stats):
-        col = i % 2
-        row = i // 2
-        bx1 = 36 + col*(cw+16)
-        by1 = sy0 + row*(rh+10)
-        bx2, by2 = bx1+cw, by1+rh
-        draw.rounded_rectangle([bx1,by1,bx2,by2], radius=14, fill=(13,5,36))
-        draw.rounded_rectangle([bx1,by1,bx1+5,by2], radius=4, fill=accent)
-        draw.text((bx1+22, by1+14), label, font=fl, fill=(165,145,215))
-        draw.text((bx1+22, by1+36), value, font=fv, fill=(255,255,255))
-        draw.text((bx2-14, by1+36), icon,  font=fv, fill=accent, anchor="rm")
+    f_title  = lf(bold_paths, 16)
+    f_name   = lf(bold_paths, 28)
+    f_label  = lf(reg_paths,  13)
+    f_value  = lf(bold_paths, 22)
+    f_small  = lf(reg_paths,  12)
+    f_streak = lf(bold_paths, 14)
 
-    sy1 = sy0 + 2*(rh+10)
-    sy2 = sy1 + 56
-    draw.rounded_rectangle([36, sy1, W-36, sy2], radius=14, fill=(13,5,36))
-    draw.rounded_rectangle([36, sy1, 41,   sy2], radius=4,  fill=(255,145,55))
-    bx1r, by1r = 62, sy1+32
-    bx2r, by2r = W-62, sy1+46
-    draw.rounded_rectangle([bx1r,by1r,bx2r,by2r], radius=6, fill=(28,12,68))
-    filled = int((bx2r-bx1r)*streak/7)
-    if filled > 0:
-        draw.rounded_rectangle(
-            [bx1r, by1r, bx1r+filled, by2r], radius=6, fill=(255,145,55)
-        )
-    draw.text((62,    sy1+12), f"🔥  Стрик: {streak} / 7",
-              font=fv, fill=(255,205,105))
-    draw.text((W-62,  sy1+12), f"День {streak}",
-              font=fl, fill=(205,165,85), anchor="rm")
+    # ── ШАПКА ──────────────────────────────────────────────
+    HDR_Y1, HDR_Y2 = MARGIN, MARGIN + 72
+    draw.rounded_rectangle([MARGIN, HDR_Y1, W-MARGIN, HDR_Y2],
+                            radius=20, fill=PURPLE_CARD)
+    # блики по краям
+    draw.rounded_rectangle([MARGIN, HDR_Y1, MARGIN+6, HDR_Y2],
+                            radius=4, fill=PURPLE_LIGHT)
+    draw.rounded_rectangle([W-MARGIN-6, HDR_Y1, W-MARGIN, HDR_Y2],
+                            radius=4, fill=PURPLE_LIGHT)
 
-    draw.rounded_rectangle([36, H-54, W-36, H-28], radius=10, fill=(11,4,30))
-    draw.text((W//2, H-41),
-              f"@{BOT_USERNAME}  •  t.me/pipisamod",
-              font=ft, fill=(75,55,125), anchor="mm")
-    for x in range(22, W-22):
-        t = (x-22)/(W-44)
-        draw.line([(x, H-22), (x, H-18)],
-                  fill=(int(55+165*t), 28, int(225-80*t)))
+    draw.text((W//2, HDR_Y1+18), "STATISTIKA",
+              font=f_title, fill=TEXT_DIM, anchor="mm")
+
+    disp = (name if len(name) <= 24 else name[:21] + "...").upper()
+    draw.text((W//2, HDR_Y1+48), disp,
+              font=f_name, fill=TEXT_WHITE, anchor="mm")
+
+    # ── 4 КАРТОЧКИ СТАТЫ ────────────────────────────────────
+    cards = [
+        ("RAZMER PISYUNA", f"{size} CM",  PURPLE_LIGHT),
+        ("MESTO V CHATE",  f"#{rank}",    ACCENT_GOLD),
+        ("POSLED. IGRA",   last_used,     ACCENT_CYAN),
+        ("DOF. POPYTKI",   f"{extra}",    ACCENT_GREEN),
+    ]
+    C_MARGIN = MARGIN + 8
+    GAP      = 10
+    ROWS     = 2
+    COLS     = 2
+    cw = (W - 2*C_MARGIN - (COLS-1)*GAP) // COLS
+    ch = 88
+    CARD_Y0  = HDR_Y2 + 14
+
+    for i, (label, value, accent) in enumerate(cards):
+        col = i % COLS
+        row = i // COLS
+        x1  = C_MARGIN + col*(cw+GAP)
+        y1  = CARD_Y0  + row*(ch+GAP)
+        x2, y2 = x1+cw, y1+ch
+
+        draw.rounded_rectangle([x1, y1, x2, y2], radius=16, fill=PURPLE_MID)
+        # левая цветная полоска
+        draw.rounded_rectangle([x1, y1, x1+5, y2], radius=4, fill=accent)
+        # метка
+        draw.text((x1+18, y1+16), label, font=f_label, fill=TEXT_DIM)
+        # значение
+        draw.text((x1+18, y1+42), value, font=f_value, fill=TEXT_WHITE)
+        # декоративная точка-акцент справа-снизу
+        draw.ellipse([x2-22, y2-22, x2-10, y2-10], fill=accent+(60,) if False else accent)
+
+    # ── СТРИК-БАР ──────────────────────────────────────────
+    STR_Y1 = CARD_Y0 + ROWS*(ch+GAP) + 4
+    STR_Y2 = STR_Y1 + 58
+    draw.rounded_rectangle([C_MARGIN, STR_Y1, W-C_MARGIN, STR_Y2],
+                            radius=14, fill=PURPLE_MID)
+    draw.rounded_rectangle([C_MARGIN, STR_Y1, C_MARGIN+5, STR_Y2],
+                            radius=4, fill=ACCENT_ORNG)
+
+    # текст стрика
+    draw.text((C_MARGIN+18, STR_Y1+10), "DAILY STRIK",
+              font=f_label, fill=TEXT_DIM)
+    draw.text((C_MARGIN+18, STR_Y1+30), f"{streak}  /  7",
+              font=f_streak, fill=ACCENT_ORNG)
+
+    # прогресс-бар
+    BAR_X1 = C_MARGIN + 160
+    BAR_X2 = W - C_MARGIN - 14
+    BAR_Y1 = STR_Y1 + 20
+    BAR_Y2 = STR_Y1 + 38
+    draw.rounded_rectangle([BAR_X1, BAR_Y1, BAR_X2, BAR_Y2],
+                            radius=8, fill=PURPLE_DARK)
+    filled_w = int((BAR_X2 - BAR_X1) * min(streak, 7) / 7)
+    if filled_w > 0:
+        draw.rounded_rectangle([BAR_X1, BAR_Y1, BAR_X1+filled_w, BAR_Y2],
+                                radius=8, fill=ACCENT_ORNG)
+    # метки дней над баром (7 точек)
+    seg = (BAR_X2 - BAR_X1) / 7
+    for d in range(1, 8):
+        dot_x = int(BAR_X1 + seg*(d-0.5))
+        clr = ACCENT_GOLD if d <= streak else TEXT_DIM
+        draw.ellipse([dot_x-3, BAR_Y1-8, dot_x+3, BAR_Y1-2], fill=clr)
+
+    # ── ПОДПИСЬ ────────────────────────────────────────────
+    FTR_Y = H - MARGIN - 26
+    draw.rounded_rectangle([C_MARGIN, FTR_Y, W-C_MARGIN, FTR_Y+22],
+                            radius=8, fill=PURPLE_DARK)
+    draw.text((W//2, FTR_Y+11), f"@{BOT_USERNAME}  |  t.me/pipisamod",
+              font=f_small, fill=TEXT_DIM, anchor="mm")
+
+    # ── НИЖНЯЯ ЛИНИЯ ГРАДИЕНТ ──────────────────────────────
+    for x in range(MARGIN, W-MARGIN):
+        t   = (x - MARGIN) / (W - 2*MARGIN)
+        col = (int(80+160*t), 28, int(220-80*t))
+        draw.line([(x, H-MARGIN-2), (x, H-MARGIN)], fill=col)
 
     buf = BytesIO()
-    img.save(buf, format="PNG", quality=95)
+    img.save(buf, format="PNG")
     buf.seek(0)
     return buf
 
@@ -608,31 +688,110 @@ async def cmd_start(message: Message):
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     me = await bot.get_me()
-    kb = ikb(
-        [ibtn("➕ Добавить в группу",
-              url=f"https://t.me/{me.username}?startgroup=true",
-              style="primary", icon_id=I.ROCKET)],
-        [
-            ibtn("📢 Канал", url=CHANNEL_LINK, icon_id=I.CHANNEL),
-            ibtn("💬 Чат",   url=CHAT_LINK),
-        ],
+    text, kb = await _send_help_page(message.chat.id, "game", me.username)
+    await send_raw(message.chat.id, text, reply_markup=kb)
+
+async def _send_help_page(chat_id, page: str, bot_username: str):
+    pages = {
+        "game": (
+            f"🎮 <b>ИГРА</b>\n\n"
+            f"{E.DICK} /dick — Померяться писюном\n"
+            f"   └ Кулдаун 30 мин, шанс роста или уменьшения\n\n"
+            f"✏️ /nick <i>НИК</i> — Сменить никнейм\n"
+            f"   └ Ник должен быть уникальным, макс. 32 символа\n\n"
+            f"{E.GIFT} /daily — Ежедневный бонус\n"
+            f"   └ Стрик до 7 дней, нужен @{BOT_USERNAME} в био"
+        ),
+        "ratings": (
+            f"{E.TROPHY} <b>РЕЙТИНГИ</b>\n\n"
+            f"🏅 /top — Топ писюнов\n"
+            f"   └ 3 режима: топ чата / глобальный / топ чатов\n\n"
+            f"   Переключай режимы кнопками прямо в сообщении"
+        ),
+        "profile": (
+            f"{E.STAT} <b>ПРОФИЛЬ</b>\n\n"
+            f"{E.STAT} /stats — Статистика текстом\n"
+            f"   └ Размер, место, стрик, попытки\n\n"
+            f"🖼 /stats_img — Статистика картинкой\n"
+            f"   └ Красивая карточка игрока\n\n"
+            f"{E.PEOPLE} /ref — Реферальная система\n"
+            f"   └ +2 попытки тебе, +1 другу"
+        ),
+        "shop": (
+            f"{E.GEM} <b>МАГАЗИН И БОНУСЫ</b>\n\n"
+            f"{E.PROMO} /promo — Активировать промокод\n"
+            f"   └ Вводи коды из канала\n\n"
+            f"{E.GEM} /buy — Купить доп. попытки за ⭐\n"
+            f"   └ Только в личных сообщениях с ботом\n\n"
+            f"   1 попытка — 3⭐ | 3 попытки — 8⭐ | 5 попыток — 12⭐"
+        ),
+        "links": (
+            f"{E.CHANNEL} <b>ССЫЛКИ</b>\n\n"
+            f"📢 Канал: {CHANNEL_LINK}\n"
+            f"💬 Чат: {CHAT_LINK}\n\n"
+            f"➕ Добавить бота в группу:\n"
+            f"   t.me/{bot_username}?startgroup=true"
+        ),
+    }
+    nav = {
+        "game":    ("",        "ratings"),
+        "ratings": ("game",    "profile"),
+        "profile": ("ratings", "shop"),
+        "shop":    ("profile", "links"),
+        "links":   ("shop",    ""),
+    }
+    labels = {
+        "game":    "🎮 Игра",
+        "ratings": "🏆 Рейтинги",
+        "profile": "📊 Профиль",
+        "shop":    "💎 Магазин",
+        "links":   "🔗 Ссылки",
+    }
+    prev_p, next_p = nav[page]
+    total  = len(pages)
+    cur_n  = list(pages.keys()).index(page) + 1
+
+    # Строка навигации
+    nav_row = []
+    if prev_p:
+        nav_row.append(ibtn(f"◀ {labels[prev_p]}", callback=f"help_{prev_p}"))
+    if next_p:
+        nav_row.append(ibtn(f"{labels[next_p]} ▶", callback=f"help_{next_p}"))
+
+    # Строка быстрого выбора раздела
+    quick_row1 = [
+        ibtn("🎮" if page != "game"    else "[ 🎮 ]", callback="help_game"),
+        ibtn("🏆" if page != "ratings" else "[ 🏆 ]", callback="help_ratings"),
+        ibtn("📊" if page != "profile" else "[ 📊 ]", callback="help_profile"),
+        ibtn("💎" if page != "shop"    else "[ 💎 ]", callback="help_shop"),
+        ibtn("🔗" if page != "links"   else "[ 🔗 ]", callback="help_links"),
+    ]
+
+    rows = [quick_row1]
+    if nav_row:
+        rows.append(nav_row)
+
+    kb = ikb(*rows)
+    text = (
+        f"{E.CROWN} <b>Помощь PipisaMod</b>  "
+        f"<i>[{cur_n}/{total}]</i>\n"
+        f"{'─' * 22}\n\n"
+        + pages[page]
     )
-    await send_raw(
-        message.chat.id,
-        f"{E.CROWN} <b>Команды PipisaMod:</b>\n\n"
-        f"{E.DICK} /dick — Изменить размер (кд 30 мин)\n"
-        f"{E.GIFT} /daily — Ежедневный бонус\n"
-        f"{E.TROPHY} /top_dick — Топ 10 чата\n"
-        f"{E.WORLD} /global_top — Глобальный топ 10\n"
-        f"{E.STAT} /stats — Моя статистика\n"
-        f"🖼 /stats_img — Статистика картинкой\n"
-        f"{E.PEOPLE} /ref — Реферальная система\n"
-        f"{E.PROMO} /promo — Ввести промокод\n"
-        f"{E.GEM} /buy — Купить доп. попытки (только в ЛС)\n\n"
-        f"{E.CHANNEL} Канал: {CHANNEL_LINK}\n"
-        f"💬 Чат: {CHAT_LINK}",
-        reply_markup=kb,
-    )
+    return text, kb
+
+@dp.callback_query(F.data.startswith("help_"))
+async def cb_help_nav(callback: CallbackQuery):
+    page = callback.data[5:]   # "help_game" → "game"
+    valid = {"game", "ratings", "profile", "shop", "links"}
+    if page not in valid:
+        await answer_cb(callback.id)
+        return
+    me = await bot.get_me()
+    text, kb = await _send_help_page(0, page, me.username)
+    await edit_raw(callback.message.chat.id, callback.message.message_id,
+                   text, reply_markup=kb)
+    await answer_cb(callback.id)
 
 # ══════════════════════════════════════════════
 #  /daily
@@ -640,6 +799,8 @@ async def cmd_help(message: Message):
 
 @dp.message(Command("daily"))
 async def cmd_daily(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
     data = load_data()
     g    = get_global(data, message.from_user.id)
     cur  = g.get("daily_streak", 0)
@@ -684,18 +845,7 @@ async def cmd_dick(message: Message):
     uid   = message.from_user.id
     uname = message.from_user.full_name
 
-    if not await check_sub(uid):
-        kb = ikb(
-            [ibtn("📢 Подписаться", url=CHANNEL_LINK,
-                  style="primary", icon_id=I.CHANNEL)],
-            [ibtn("✅ Я подписался", callback="check_sub",
-                  style="success", icon_id=I.CHECK)],
-        )
-        await send_raw(
-            message.chat.id,
-            f"{E.CHANNEL} Для игры нужно подписаться на наш канал!",
-            reply_markup=kb,
-        )
+    if not await require_sub(message.chat.id, uid):
         return
 
     data = load_data()
@@ -727,8 +877,14 @@ async def cmd_dick(message: Message):
         ud["extra_attempts"] -= 1
         used_extra = True
 
-    change = random.randint(10, 20)
-    ud["size"]     += change
+    # Веса: рост 90, уменьшение 50 — т.е. ~64% вырастет, ~36% уменьшится
+    grew = random.choices([True, False], weights=[90, 50], k=1)[0]
+    if grew:
+        change = random.randint(5, 25)
+    else:
+        change = random.randint(1, 5)
+
+    ud["size"]     += change if grew else -change
     ud["last_used"] = now
 
     g = get_global(data, uid)
@@ -742,50 +898,55 @@ async def cmd_dick(message: Message):
                if ex_now > 0 else "")
     ul = " <i>(доп. попытка)</i>" if used_extra else ""
 
+    if grew:
+        result_line = (
+            f"твой писюн вырос на <b>+{change} см</b>!{ul}\n"
+            f"Теперь он равен <b>{ud['size']} см</b>. 📈"
+        )
+    else:
+        result_line = (
+            f"твой писюн усох на <b>-{change} см</b>!{ul}\n"
+            f"Теперь он равен <b>{ud['size']} см</b>. 📉"
+        )
+
     await send_raw(
         message.chat.id,
         f"{E.DICK} <a href='tg://user?id={uid}'>{uname}</a>, "
-        f"твой писюн вырос на <b>{change} см</b>!{ul}\n"
-        f"Теперь он равен <b>{ud['size']} см</b>.\n"
+        f"{result_line}\n"
         f"{E.CLOCK} Следующая попытка через <b>{COOLDOWN_MINUTES} мин</b>"
         f"{ex_line}",
     )
 
 # ══════════════════════════════════════════════
-#  /top_dick
+#  /top  (объединённый: чат / глобал / топ чатов)
 # ══════════════════════════════════════════════
 
-@dp.message(Command("top_dick"))
-async def cmd_top_dick(message: Message):
-    if message.chat.type == "private":
-        await send_raw(message.chat.id,
-                       f"{E.CROSS} Команда работает только в группах!")
-        return
+def _top_kb(active: str) -> dict:
+    """Кнопки переключения топа, активная выделена."""
+    def btn(label, cb, is_active):
+        text = f"[ {label} ]" if is_active else label
+        return ibtn(text, callback=cb,
+                    style="primary" if is_active else None)
+    return ikb([
+        btn("🏅 Топ чата",    "top_chat",   active == "chat"),
+        btn("🌍 Глобальный",  "top_global", active == "global"),
+        btn("🏙 Топ чатов",   "top_chats",  active == "chats"),
+    ])
 
-    cid  = str(message.chat.id)
+async def _build_top_chat(chat_id) -> str:
+    cid  = str(chat_id)
     data = load_data()
-
     if cid not in data or not data[cid]:
-        await send_raw(message.chat.id,
-                       f"{E.STAT} В этом чате ещё нет игроков!")
-        return
-
-    su     = sorted(data[cid].items(),
-                    key=lambda x: x[1].get("size", 0), reverse=True)
+        return f"{E.STAT} В этом чате ещё нет игроков!"
+    su     = sorted(data[cid].items(), key=lambda x: x[1].get("size", 0), reverse=True)
     medals = [E.MEDAL1, E.MEDAL2, E.MEDAL3]
     lines  = [f"{E.TROPHY} <b>Топ 10 писюнов чата</b>\n"]
     for i, (_, ud) in enumerate(su[:10]):
         m = medals[i] if i < 3 else f"{i+1}."
         lines.append(f"{m} {ud.get('name','?')} — <b>{ud.get('size',0)} см</b>")
+    return "\n".join(lines)
 
-    await send_raw(message.chat.id, "\n".join(lines))
-
-# ══════════════════════════════════════════════
-#  /global_top
-# ══════════════════════════════════════════════
-
-@dp.message(Command("global_top"))
-async def cmd_global_top(message: Message):
+async def _build_top_global() -> str:
     data = load_data()
     au   = {}
     for cid, cd in data.items():
@@ -794,30 +955,106 @@ async def cmd_global_top(message: Message):
         for uid, ud in cd.items():
             if uid not in au or au[uid].get("size", 0) < ud.get("size", 0):
                 au[uid] = ud
-
     if not au:
-        await send_raw(message.chat.id,
-                       f"{E.WORLD} Глобальная статистика пуста!")
-        return
-
+        return f"{E.WORLD} Глобальная статистика пуста!"
     su     = sorted(au.items(), key=lambda x: x[1].get("size", 0), reverse=True)
     medals = [E.MEDAL1, E.MEDAL2, E.MEDAL3]
     lines  = [f"{E.WORLD} <b>Глобальный топ 10</b>\n"]
     for i, (_, ud) in enumerate(su[:10]):
         m = medals[i] if i < 3 else f"{i+1}."
         lines.append(f"{m} {ud.get('name','?')} — <b>{ud.get('size',0)} см</b>")
+    return "\n".join(lines)
 
-    await send_raw(message.chat.id, "\n".join(lines))
+async def _build_top_chats() -> str:
+    data = load_data()
+    chat_scores = []
+    for cid, cd in data.items():
+        if cid == "_global":
+            continue
+        total_cm     = sum(ud.get("size", 0) for ud in cd.values() if isinstance(ud, dict))
+        player_count = len(cd)
+        if total_cm <= 0:
+            continue
+        try:
+            chat_info = await bot.get_chat(int(cid))
+            chat_name = chat_info.title or f"Чат {cid}"
+        except Exception:
+            chat_name = f"Чат {cid}"
+        chat_scores.append((chat_name, total_cm, player_count))
+    if not chat_scores:
+        return f"{E.WORLD} Статистика чатов пуста!"
+    chat_scores.sort(key=lambda x: x[1], reverse=True)
+    medals = [E.MEDAL1, E.MEDAL2, E.MEDAL3]
+    lines  = [f"🏙 <b>Топ чатов по суммарному размеру</b>\n"]
+    for i, (name, total, players) in enumerate(chat_scores[:10]):
+        m = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{m} <b>{name}</b>\n   📏 {total} см | 👥 {players} игр.")
+    return "\n".join(lines)
 
-# ══════════════════════════════════════════════
-#  /stats
-# ══════════════════════════════════════════════
+@dp.message(Command("top"))
+async def cmd_top(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
+    # По умолчанию — топ чата (если группа), иначе глобальный
+    if message.chat.type != "private":
+        text = await _build_top_chat(message.chat.id)
+        active = "chat"
+    else:
+        text = await _build_top_global()
+        active = "global"
+    await send_raw(message.chat.id, text, reply_markup=_top_kb(active))
+
+# Оставляем старые команды как алиасы → редиректят на /top
+@dp.message(Command("top_dick"))
+async def cmd_top_dick(message: Message):
+    await cmd_top(message)
+
+@dp.message(Command("global_top"))
+async def cmd_global_top(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
+    text = await _build_top_global()
+    await send_raw(message.chat.id, text, reply_markup=_top_kb("global"))
+
+@dp.message(Command("top_chats"))
+async def cmd_top_chats(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
+    text = await _build_top_chats()
+    await send_raw(message.chat.id, text, reply_markup=_top_kb("chats"))
+
+# Callbacks переключения топа
+@dp.callback_query(F.data == "top_chat")
+async def cb_top_chat(callback: CallbackQuery):
+    if callback.message.chat.type == "private":
+        await answer_cb(callback.id, "Топ чата доступен только в группе!", True)
+        return
+    text = await _build_top_chat(callback.message.chat.id)
+    await edit_raw(callback.message.chat.id, callback.message.message_id,
+                   text, reply_markup=_top_kb("chat"))
+    await answer_cb(callback.id)
+
+@dp.callback_query(F.data == "top_global")
+async def cb_top_global(callback: CallbackQuery):
+    text = await _build_top_global()
+    await edit_raw(callback.message.chat.id, callback.message.message_id,
+                   text, reply_markup=_top_kb("global"))
+    await answer_cb(callback.id)
+
+@dp.callback_query(F.data == "top_chats")
+async def cb_top_chats(callback: CallbackQuery):
+    text = await _build_top_chats()
+    await edit_raw(callback.message.chat.id, callback.message.message_id,
+                   text, reply_markup=_top_kb("chats"))
+    await answer_cb(callback.id)
 
 @dp.message(Command("stats"))
 async def cmd_stats(message: Message):
     if message.chat.type == "private":
         await send_raw(message.chat.id,
                        f"{E.CROSS} Команда работает только в группах!")
+        return
+    if not await require_sub(message.chat.id, message.from_user.id):
         return
 
     cid  = str(message.chat.id)
@@ -905,6 +1142,8 @@ async def cmd_stats_img(message: Message):
         await send_raw(message.chat.id,
                        f"{E.CROSS} Команда работает только в группах!")
         return
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
     await _send_stats_img(
         message.chat.id, message.from_user.id, message.chat.id
     )
@@ -915,6 +1154,8 @@ async def cmd_stats_img(message: Message):
 
 @dp.message(Command("ref"))
 async def cmd_ref(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
     uid  = message.from_user.id
     data = load_data()
     g    = get_global(data, uid)
@@ -958,6 +1199,8 @@ async def cmd_ref(message: Message):
 
 @dp.message(Command("buy"))
 async def cmd_buy(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
     if message.chat.type != "private":
         await send_raw(
             message.chat.id,
@@ -989,8 +1232,76 @@ async def cmd_buy(message: Message):
 
 @dp.message(Command("promo"))
 async def cmd_promo(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
     set_state(message.from_user.id, "wait_promo")
     await send_raw(message.chat.id, f"{E.PROMO} Введи промокод:")
+
+# ══════════════════════════════════════════════
+#  /nick
+# ══════════════════════════════════════════════
+
+@dp.message(Command("nick"))
+async def cmd_nick(message: Message):
+    if not await require_sub(message.chat.id, message.from_user.id):
+        return
+    uid  = message.from_user.id
+    args = message.text.split(maxsplit=1)
+
+    if len(args) < 2 or not args[1].strip():
+        await send_raw(
+            message.chat.id,
+            f"📝 <b>Смена никнейма</b>\n\n"
+            f"Использование: <code>/nick НовыйНик</code>\n"
+            f"Пример: <code>/nick КрутойИгрок</code>",
+        )
+        return
+
+    new_nick = args[1].strip()
+
+    if len(new_nick) > 32:
+        await send_raw(message.chat.id,
+                       f"{E.CROSS} Ник слишком длинный (макс. 32 символа).")
+        return
+
+    data = load_data()
+
+    # Проверка на уникальность
+    for cid, cd in data.items():
+        if cid == "_global":
+            continue
+        for uid_str, ud in cd.items():
+            if ud.get("name", "").lower() == new_nick.lower() and int(uid_str) != uid:
+                await send_raw(message.chat.id,
+                               f"{E.CROSS} Ник <b>{new_nick}</b> уже занят!")
+                return
+
+    # Проверка в _global
+    for uid_str, gd in data.get("_global", {}).items():
+        if gd.get("name", "").lower() == new_nick.lower() and int(uid_str) != uid:
+            await send_raw(message.chat.id,
+                           f"{E.CROSS} Ник <b>{new_nick}</b> уже занят!")
+            return
+
+    old_nick = message.from_user.full_name
+    # Обновляем имя везде
+    g = get_global(data, uid)
+    old_nick = g.get("name", old_nick)
+    g["name"] = new_nick
+
+    uid_str = str(uid)
+    for cid, cd in data.items():
+        if cid == "_global":
+            continue
+        if uid_str in cd:
+            cd[uid_str]["name"] = new_nick
+
+    save_data(data)
+    await send_raw(
+        message.chat.id,
+        f"✏️ Ник изменён!\n"
+        f"{E.ARROW} <b>{old_nick}</b> → <b>{new_nick}</b>",
+    )
 
 # ══════════════════════════════════════════════
 #  /admin
@@ -1030,6 +1341,12 @@ async def cmd_admin(message: Message):
                  style="danger",  icon_id=I.CROSS),
         ],
         [ibtn("📋 Список промокодов", callback="adm_promo_list")],
+        [
+            ibtn("📣 Рассылка всем",  callback="adm_broadcast",
+                 style="primary", icon_id=I.CHANNEL),
+            ibtn("💌 МП (реф. задание)", callback="adm_mp_task",
+                 style="success", icon_id=I.GIFT),
+        ],
     )
     await send_raw(
         message.chat.id,
@@ -1177,6 +1494,38 @@ async def cb_top_refs(callback: CallbackQuery):
     await send_raw(callback.from_user.id, "\n".join(lines))
     await answer_cb(callback.id)
 
+@dp.callback_query(F.data == "mp_task_get")
+async def cb_mp_task_get(callback: CallbackQuery):
+    uid  = callback.from_user.id
+    data = load_data()
+    me   = await bot.get_me()
+
+    ref_link  = f"https://t.me/{me.username}?start=ref_{uid}"
+    share_url = (
+        f"https://t.me/share/url"
+        f"?url={ref_link}"
+        f"&text=Присоединяйся%20к%20PipisaMod!%20%F0%9F%94%A5"
+    )
+    g    = get_global(data, uid)
+    refs = g.get("referrals", [])
+
+    kb = ikb(
+        [ibtn("🔗 Поделиться ссылкой", url=share_url,
+              style="primary", icon_id=I.LINK)],
+    )
+    await send_raw(
+        uid,
+        f"🎯 <b>Твоё задание</b>\n\n"
+        f"{E.PEOPLE} Пригласи друга по своей ссылке!\n\n"
+        f"{E.LINK} Твоя реф. ссылка:\n"
+        f"{E.ARROW} <code>{ref_link}</code>\n\n"
+        f"{E.PEOPLE} Уже приглашено: <b>{len(refs)} чел.</b>\n\n"
+        f"{E.INFO} <i>За каждого подтверждённого друга тебе автоматически "
+        f"зачисляются бонусные попытки.</i>",
+        reply_markup=kb,
+    )
+    await answer_cb(callback.id, "📎 Ссылка отправлена!")
+
 @dp.callback_query(F.data.startswith("buy_"))
 async def cb_buy(callback: CallbackQuery):
     if callback.message.chat.type != "private":
@@ -1261,6 +1610,56 @@ async def cb_admin(callback: CallbackQuery):
                     f"🔑 <code>{code}</code> — {att} поп. | {used}/{max_u}"
                 )
             await send_raw(callback.from_user.id, "\n".join(lines))
+    elif a == "adm_broadcast":
+        set_state(callback.from_user.id, "adm_broadcast")
+        await send_raw(
+            callback.from_user.id,
+            f"📣 <b>Рассылка всем пользователям</b>\n\n"
+            f"Введи текст сообщения (поддерживается HTML):\n"
+            f"<i>Например: &lt;b&gt;Новость!&lt;/b&gt; Текст...</i>",
+        )
+    elif a == "adm_mp_task":
+        # Сразу рассылаем реф. задание
+        data     = load_data()
+        all_uids = set()
+        for cid, cd in data.items():
+            if cid == "_global":
+                continue
+            all_uids.update(cd.keys())
+        all_uids.update(data.get("_global", {}).keys())
+
+        sent, failed = 0, 0
+        me = await bot.get_me()
+        for uid_str in all_uids:
+            try:
+                target_id = int(uid_str)
+                if is_banned(data, target_id):
+                    continue
+                task_kb = ikb(
+                    [ibtn("🔗 Получить реферальную ссылку", callback="mp_task_get",
+                          style="success", icon_id=I.LINK)],
+                )
+                await send_raw(
+                    target_id,
+                    f"🎯 <b>ЗАДАНИЕ ОТ АДМИНИСТРАТОРА</b>\n\n"
+                    f"{E.PEOPLE} Пригласи друга по реферальной ссылке\n"
+                    f"и получи бонусные попытки бесплатно!\n\n"
+                    f"{E.CHECK} Друг должен подписаться на канал\n"
+                    f"и сыграть /dick — тогда попытки зачислятся.\n\n"
+                    f"🔥 Нажми кнопку ниже, чтобы получить свою ссылку!",
+                    reply_markup=task_kb,
+                )
+                sent += 1
+            except Exception:
+                failed += 1
+            await asyncio.sleep(0.05)
+
+        await send_raw(
+            callback.from_user.id,
+            f"💌 <b>МП-рассылка завершена!</b>\n\n"
+            f"{E.CHECK} Доставлено: <b>{sent}</b>\n"
+            f"{E.CROSS} Не доставлено: <b>{failed}</b>",
+        )
 
     await answer_cb(callback.id)
 
@@ -1385,6 +1784,46 @@ async def on_text(message: Message):
         else:
             await send_raw(message.chat.id,
                            f"{E.CROSS} Промокод не найден.")
+
+    elif st == "adm_broadcast":
+        clr_state(uid)
+        text = message.text.strip()
+        if not text:
+            await send_raw(message.chat.id, f"{E.CROSS} Пустое сообщение.")
+            return
+
+        data     = load_data()
+        all_uids = set()
+        for cid, cd in data.items():
+            if cid == "_global":
+                continue
+            all_uids.update(cd.keys())
+        # Также берём из _global (пользователи без чатов)
+        all_uids.update(data.get("_global", {}).keys())
+
+        sent, failed = 0, 0
+        status_msg = await send_raw(
+            message.chat.id,
+            f"📣 Рассылка запущена... (0/{len(all_uids)})",
+        )
+
+        for i, uid_str in enumerate(all_uids, 1):
+            try:
+                target_id = int(uid_str)
+                if is_banned(data, target_id):
+                    continue
+                await send_raw(target_id, f"📣 <b>Сообщение от администратора:</b>\n\n{text}")
+                sent += 1
+            except Exception:
+                failed += 1
+            await asyncio.sleep(0.05)  # Flood control
+
+        await send_raw(
+            message.chat.id,
+            f"📣 <b>Рассылка завершена!</b>\n\n"
+            f"{E.CHECK} Доставлено: <b>{sent}</b>\n"
+            f"{E.CROSS} Не доставлено: <b>{failed}</b>",
+        )
 
 # ══════════════════════════════════════════════
 #  ПРИВЕТСТВИЕ В ГРУППЕ
