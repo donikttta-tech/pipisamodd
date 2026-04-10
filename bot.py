@@ -127,6 +127,21 @@ async def send_raw(
         p["reply_to_message_id"] = reply_to
     return await _api("sendMessage", p)
 
+async def copy_message_raw(
+    chat_id,
+    from_chat_id,
+    message_id: int,
+    reply_markup: dict = None,
+) -> dict:
+    p = {
+        "chat_id": str(chat_id),
+        "from_chat_id": str(from_chat_id),
+        "message_id": message_id,
+    }
+    if reply_markup:
+        p["reply_markup"] = reply_markup
+    return await _api("copyMessage", p)
+
 async def edit_raw(
     chat_id,
     message_id: int,
@@ -1615,8 +1630,9 @@ async def cb_admin(callback: CallbackQuery):
         await send_raw(
             callback.from_user.id,
             f"📣 <b>Рассылка всем пользователям</b>\n\n"
-            f"Введи текст сообщения (поддерживается HTML):\n"
-            f"<i>Например: &lt;b&gt;Новость!&lt;/b&gt; Текст...</i>",
+            f"Отправь сообщение одним постом.\n"
+            f"Оно будет скопировано в рассылку со всем форматированием, "
+            f"включая HTML и Telegram Premium emoji.",
         )
     elif a == "adm_mp_task":
         # Сразу рассылаем реф. задание
@@ -1812,7 +1828,7 @@ async def on_text(message: Message):
                 target_id = int(uid_str)
                 if is_banned(data, target_id):
                     continue
-                await send_raw(target_id, f"📣 <b>Сообщение от администратора:</b>\n\n{text}")
+                await copy_message_raw(target_id, message.chat.id, message.message_id)
                 sent += 1
             except Exception:
                 failed += 1
