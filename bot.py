@@ -675,6 +675,10 @@ async def cmd_start(message: Message):
     else:
         save_data(data)
 
+    # Проверка подписки на канал
+    if not await require_sub(message.chat.id, uid):
+        return
+
     me = await bot.get_me()
     kb = ikb(
         [ibtn("➕ Добавить в группу",
@@ -1378,10 +1382,27 @@ async def cmd_admin(message: Message):
 @dp.callback_query(F.data == "check_sub")
 async def cb_check_sub(callback: CallbackQuery):
     if await check_sub(callback.from_user.id):
+        me = await bot.get_me()
+        kb = ikb(
+            [ibtn("➕ Добавить в группу",
+                  url=f"https://t.me/{me.username}?startgroup=true",
+                  style="primary", icon_id=I.ROCKET)],
+            [
+                ibtn("📢 Канал", url=CHANNEL_LINK, icon_id=I.CHANNEL),
+                ibtn("💬 Чат",   url=CHAT_LINK),
+            ],
+        )
         await edit_raw(
             callback.message.chat.id,
             callback.message.message_id,
-            f"{E.CHECK} Отлично! Теперь используй /dick в группе.",
+            f"{E.CHECK} Подписка подтверждена!\n\n"
+            f"{E.ALIEN} Привет! Я <b>PipisaMod</b> — бот для чатов!\n\n"
+            f"{E.DICK} Каждые <b>30 минут</b> используй /dick в группе\n"
+            f"{E.GIFT} Ежедневный бонус: /daily\n"
+            f"{E.PEOPLE} Реферальная система: /ref\n"
+            f"{E.GEM} Купить попытки: /buy (только в ЛС)\n\n"
+            f"{E.ROCKET} Добавь меня в свою группу!",
+            reply_markup=kb,
         )
         await answer_cb(callback.id)
     else:
