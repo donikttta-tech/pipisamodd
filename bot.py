@@ -379,8 +379,9 @@ async def check_sub(user_id: int) -> bool:
     try:
         m = await bot.get_chat_member(f"@{CHANNEL_USERNAME}", user_id)
         return m.status not in ("left", "kicked", "banned")
-    except Exception:
-        return True
+    except Exception as e:
+        print(f"[check_sub] Ошибка проверки подписки для {user_id}: {e}")
+        return False
 
 async def require_sub(chat_id, user_id: int) -> bool:
     """Возвращает True если подписан, иначе отправляет блокирующее сообщение и возвращает False."""
