@@ -379,9 +379,8 @@ async def check_sub(user_id: int) -> bool:
     try:
         m = await bot.get_chat_member(f"@{CHANNEL_USERNAME}", user_id)
         return m.status not in ("left", "kicked", "banned")
-    except Exception as e:
-        print(f"[check_sub] Ошибка проверки подписки для {user_id}: {e}")
-        return False
+    except Exception:
+        return True
 
 async def require_sub(chat_id, user_id: int) -> bool:
     """Возвращает True если подписан, иначе отправляет блокирующее сообщение и возвращает False."""
@@ -675,10 +674,6 @@ async def cmd_start(message: Message):
             pass
     else:
         save_data(data)
-
-    # Проверка подписки на канал
-    if not await require_sub(message.chat.id, uid):
-        return
 
     me = await bot.get_me()
     kb = ikb(
@@ -1383,27 +1378,10 @@ async def cmd_admin(message: Message):
 @dp.callback_query(F.data == "check_sub")
 async def cb_check_sub(callback: CallbackQuery):
     if await check_sub(callback.from_user.id):
-        me = await bot.get_me()
-        kb = ikb(
-            [ibtn("➕ Добавить в группу",
-                  url=f"https://t.me/{me.username}?startgroup=true",
-                  style="primary", icon_id=I.ROCKET)],
-            [
-                ibtn("📢 Канал", url=CHANNEL_LINK, icon_id=I.CHANNEL),
-                ibtn("💬 Чат",   url=CHAT_LINK),
-            ],
-        )
         await edit_raw(
             callback.message.chat.id,
             callback.message.message_id,
-            f"{E.CHECK} Подписка подтверждена!\n\n"
-            f"{E.ALIEN} Привет! Я <b>PipisaMod</b> — бот для чатов!\n\n"
-            f"{E.DICK} Каждые <b>30 минут</b> используй /dick в группе\n"
-            f"{E.GIFT} Ежедневный бонус: /daily\n"
-            f"{E.PEOPLE} Реферальная система: /ref\n"
-            f"{E.GEM} Купить попытки: /buy (только в ЛС)\n\n"
-            f"{E.ROCKET} Добавь меня в свою группу!",
-            reply_markup=kb,
+            f"{E.CHECK} Отлично! Теперь используй /dick в группе.",
         )
         await answer_cb(callback.id)
     else:
