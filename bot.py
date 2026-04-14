@@ -16,7 +16,7 @@ from aiogram.types import (
     CallbackQuery, BufferedInputFile
 )
 
-TOKEN = "8533414196:AAEgJf1l2YxJApehqTbnBCNwLd0Jb4W50Eg"
+TOKEN = "8748451701:AAFCbPh8LcFItajTYUxiSSvZQyc8kJdBpvM"
 ADMIN_ID = 8144110555
 CHANNEL_USERNAME = "pipisamod"
 CHANNEL_LINK = "https://t.me/pipisamod"
@@ -317,8 +317,9 @@ def get_global(data: dict, user_id: int) -> dict:
     g.setdefault("referred_by",      None)
     g.setdefault("referrals",        [])
     g.setdefault("ref_confirmed",    False)
-    g.setdefault("daily_streak",     0)
-    g.setdefault("last_daily",       None)
+    g.setdefault("daily_streak",        0)
+    g.setdefault("last_daily",          None)
+    g.setdefault("daily_penalty_until", None)
     return g
 
 def is_banned(data: dict, user_id: int) -> bool:
@@ -1398,7 +1399,38 @@ async def cb_claim_daily(callback: CallbackQuery):
     data = load_data()
     g    = get_global(data, uid)
 
-    if not await check_bio(uid):
+    now  = now_ts()
+
+    # Проверка штрафа за удаление бота из описания после получения бонуса
+    penalty_until = safe_ts(g.get("daily_penalty_until"))
+    if penalty_until and now < penalty_until:
+        rem   = penalty_until - now
+        hours = int(rem // 3600)
+        mins  = int((rem % 3600) // 60)
+        await answer_cb(
+            callback.id,
+            f"🚫 Ты убрал @{BOT_USERNAME} из описания!\n"
+            f"Доступ к бонусу заблокирован ещё на {hours}ч {mins}м.",
+            True,
+        )
+        return
+
+    bio_ok = await check_bio(uid)
+
+    # Если бонус уже получался ранее и bio сейчас отсутствует — штраф 48 часов
+    last = safe_ts(g.get("last_daily"))
+    if not bio_ok and last is not None:
+        g["daily_penalty_until"] = now + 48 * 3600
+        save_data(data)
+        await answer_cb(
+            callback.id,
+            f"🚫 Ты убрал @{BOT_USERNAME} из описания профиля!\n"
+            f"Доступ к ежедневному бонусу заблокирован на 48 часов.",
+            True,
+        )
+        return
+
+    if not bio_ok:
         await answer_cb(
             callback.id,
             f"Добавь @{BOT_USERNAME} в описание профиля!",
@@ -1406,8 +1438,6 @@ async def cb_claim_daily(callback: CallbackQuery):
         )
         return
 
-    last = safe_ts(g.get("last_daily"))
-    now  = now_ts()
     if last and (now - last) < 86400:
         rem   = 86400 - (now - last)
         hours = int(rem // 3600)
@@ -1420,6 +1450,7 @@ async def cb_claim_daily(callback: CallbackQuery):
     bonus  = DAILY_BONUSES[streak]
     g["daily_streak"] = streak
     g["last_daily"]   = now
+    g["daily_penalty_until"] = None  # сбрасываем штраф если вдруг был
 
     if bonus["attempts"] > 0:
         add_attempts_anywhere(data, uid, bonus["attempts"])
@@ -1864,9 +1895,55 @@ async def new_members(message: Message):
 #  ЗАПУСК
 # ══════════════════════════════════════════════
 
+async def bio_checker_loop():
+    """Фоновая задача: каждые 30 минут проверяет bio всех пользователей,
+    которые хоть раз получали daily-бонус. Если @BOT_USERNAME убран —
+    ставит штраф 48 часов."""
+    await asyncio.sleep(60)  # небольшая пауза после старта
+    while True:
+        try:
+            data  = load_data()
+            now   = now_ts()
+            dirty = False
+            gdata = data.get("_global", {})
+            for uid_str, g in gdata.items():
+                # Интересуют только те, кто уже получал бонус
+                if not safe_ts(g.get("last_daily")):
+                    continue
+                # Если штраф уже активен — не трогаем
+                pen = safe_ts(g.get("daily_penalty_until"))
+                if pen and now < pen:
+                    continue
+                try:
+                    uid    = int(uid_str)
+                    bio_ok = await check_bio(uid)
+                    if not bio_ok:
+                        g["daily_penalty_until"] = now + 48 * 3600
+                        dirty = True
+                        print(f"[bio_checker] штраф 48ч → uid={uid}")
+                        try:
+                            await send_raw(
+                                uid,
+                                f"⚠️ <b>Ты убрал @{BOT_USERNAME} из описания профиля!</b>\n\n"
+                                f"Доступ к ежедневному бонусу заблокирован на <b>48 часов</b>.\n"
+                                f"Верни @{BOT_USERNAME} в описание, чтобы снова получать бонусы.",
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"[bio_checker] uid={uid_str}: {e}")
+                await asyncio.sleep(0.3)  # flood control
+            if dirty:
+                save_data(data)
+        except Exception as e:
+            print(f"[bio_checker_loop] {e}")
+        await asyncio.sleep(30 * 60)  # следующий прогон через 30 минут
+
+
 async def on_startup():
     await get_session()
     await set_commands()
+    asyncio.create_task(bio_checker_loop())
     print("✅ PipisaMod запущен!")
 
 async def on_shutdown():
