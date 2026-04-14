@@ -16,7 +16,7 @@ from aiogram.types import (
     CallbackQuery, BufferedInputFile
 )
 
-TOKEN = "8748451701:AAFCbPh8LcFItajTYUxiSSvZQyc8kJdBpvM"
+TOKEN = "88533414196:AAEgJf1l2YxJApehqTbnBCNwLd0Jb4W50Eg"
 ADMIN_ID = 8144110555
 CHANNEL_USERNAME = "pipisamod"
 CHANNEL_LINK = "https://t.me/pipisamod"
